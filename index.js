@@ -44,6 +44,21 @@ async function run() {
       res.send(result);
     });
 
+    // // post room
+    // app.post("/rooms", async (req, res) => {
+    //   const room = req.body;
+    //   const result = roomsCollection.insertOne(room);
+    //   console.log(result);
+    //   res.send(result);
+    // });
+    // Save a room in database
+    app.post("/rooms", async (req, res) => {
+      const room = req.body;
+      console.log(room);
+      const result = await roomsCollection.insertOne(room);
+      res.send(result);
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
