@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
 const morgan = require("morgan");
 require("dotenv").config();
 const port = process.env.PORT || 5000;
@@ -25,12 +26,42 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+// verifyJwt
+const verifyJwt = (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res
+      .status(401)
+      .send({ error: true, message: "Unauthorized Access" });
+  }
+  const token = authorization.split(" ")[1];
+  // verify token
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (error, decoded) => {
+    if (error) {
+      return res
+        .status(401)
+        .send({ error: true, message: "Unauthorized Access" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
 
 async function run() {
   try {
     const usersCollection = client.db("airCncDB2").collection("users");
     const roomsCollection = client.db("airCncDB2").collection("rooms");
     const bookingsCollection = client.db("airCncDB2").collection("bookings");
+
+    // generate jwt token
+    app.post("/jwt", async (req, res) => {
+      const email = req.body;
+      const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1h",
+      });
+
+      res.send({ token });
+    });
 
     // put users
 
@@ -85,10 +116,19 @@ async function run() {
       const result = await roomsCollection.updateOne(query, updateDoc);
       res.send(result);
     });
-    //
-    // get filter rooms for host
-    app.get("/rooms/:email", async (req, res) => {
+
+    // get all rooms for host
+    app.get("/rooms/:email", verifyJwt, async (req, res) => {
+      const decodedEmail = req.decoded.email;
+
       const email = req.params.email;
+      if (email !== decodedEmail) {
+        return res.status(403).send({
+          error: true,
+          message: "Forbidden Access",
+        });
+      }
+
       const query = { "hostData.email": email };
       const result = await roomsCollection.find(query).toArray();
       res.send(result);
