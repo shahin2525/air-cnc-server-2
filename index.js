@@ -4,6 +4,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const morgan = require("morgan");
 require("dotenv").config();
+const nodemailer = require("nodemailer");
 const port = process.env.PORT || 5000;
 const stripe = require("stripe")(process.env.PAYMENT_SECRET_KEY);
 
@@ -47,6 +48,32 @@ const verifyJwt = (req, res, next) => {
     next();
   });
 };
+// send mail function
+const sendMail = (emailData, emailAddress) => {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL,
+      pass: process.env.PASSWORD,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL,
+    to: emailAddress,
+    subject: emailData.subject,
+    html: `<p>${emailData?.message}</p>`,
+  };
+
+  transporter.sendMail(mailOptions, function (error, info) {
+    if (error) {
+      console.log(error);
+    } else {
+      console.log("Email sent: " + info.response);
+      // do something useful
+    }
+  });
+};
 
 async function run() {
   try {
@@ -60,7 +87,7 @@ async function run() {
       const { price } = req.body;
       console.log(price);
 
-      if (price > 0) {
+      if (price) {
         const amount = parseFloat(price * 100);
         const paymentIntent = await stripe.paymentIntents.create({
           amount: amount,
@@ -122,7 +149,23 @@ async function run() {
       const result = await roomsCollection.insertOne(room);
       res.send(result);
     });
+    // Update A room
+    app.put("/rooms/:id", verifyJwt, async (req, res) => {
+      const room = req.body;
+      console.log(room);
 
+      const filter = { _id: new ObjectId(req.params.id) };
+      const options = { upsert: true };
+      const updateDoc = {
+        $set: room,
+      };
+      const result = await roomsCollection.updateOne(
+        filter,
+        updateDoc,
+        options
+      );
+      res.send(result);
+    });
     // update room booking status
     app.patch("/rooms/status/:id", async (req, res) => {
       const id = req.params.id;
@@ -160,7 +203,6 @@ async function run() {
       const result = await roomsCollection.deleteOne(query);
       res.send(result);
     });
-    // Get bookings for host
 
     //  get booking for host
     app.get("/bookings/host", async (req, res) => {
@@ -186,9 +228,27 @@ async function run() {
     });
     // Save a bookingInfo in database
     app.post("/bookings", async (req, res) => {
-      const bookings = req.body;
+      const booking = req.body;
+      const result = await bookingsCollection.insertOne(booking);
 
-      const result = await bookingsCollection.insertOne(bookings);
+      // send confirmation email to guest email account
+      sendMail(
+        {
+          subject: "Booking Successful",
+          message: `Booking Id: ${result?.insertedId},transactionId: ${booking.transactionId}`,
+        },
+        booking?.guest?.email
+      );
+
+      // send confirmation email to host email account
+      sendMail(
+        {
+          subject: "Your room has been booked",
+          message: `Booking Id:${result?.insertedId},TransactionId: ${booking.transactionId}`,
+        },
+        booking?.host
+      );
+
       res.send(result);
     });
 
